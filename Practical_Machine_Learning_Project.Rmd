@@ -1,0 +1,111 @@
+---
+title: "Practical Machine Learning Project"
+author: "Kaiyun Cui"
+date: "3/11/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(caret)
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+In this report we used the weight lifting exercises dataset to make prediction on how well the exercise is performed based on different sensor data. The obtained dataset was first analyzed and cleaned. Then based on the clean dataset two models were evaluated, the classification tree (rpart) and the generalized boosted model (gbm). It's shown that the gbm model has much better accuracy than the rpart model. Therefore the gbm model was selected to make prediction on the testing dataset. 
+
+## Loading and cleaning the data
+
+The training and testing datasets are first downloaded and loaded.
+
+```{r}
+##trainingfileURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+##testingfileURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+##download.file(trainingfileURL, "pml-training.csv")
+##download.file(testingfileURL, "pml-testing.csv")
+training <- read.csv("pml-training.csv")
+testing <- read.csv("pml-testing.csv")
+dim(training)
+dim(testing)
+```
+The training dataset is observed to have 19622 observations of 160 variables and the testing dataset is observed to have 20 observations of 160 variables.
+
+By looking at the dataset, we can see that the first seven variables are not closely related with the prediction. Therefore we dispose the first seven columns from the original dataset.
+```{r}
+training <- training[, -c(1:7)]
+testing <- testing[, -c(1:7)]
+```
+
+Next we remove the variables with near zero variaces.
+```{r}
+zeroVarColtraining <- nearZeroVar(training, saveMetrics = TRUE)
+training <- training[, !zeroVarColtraining$nzv]
+```
+
+Also there are a lot of NAs in the dataset that we need to deal with. Our method is to get rid of the variable with more than 60% of the NA observations.
+
+```{r}
+naCol <- array(dim = length(training))
+for (i in 1:dim(training)[2]){
+    if (sum(is.na(training[,i]))/dim(training)[1] > 0.6){
+        naCol[i] <- TRUE
+    } else{
+    naCol[i] <- FALSE
+    }
+}
+training <- training[,!naCol]
+```
+
+To estimate the out-of-sample error, we divide the training dataset into the training and validation dataset.
+```{r}
+intrain <- createDataPartition(training$classe, p = 0.6, list = FALSE)
+mytraining <- training[intrain,]
+myvalidation <- training[-intrain,]
+```
+
+We then apply the same filtering to the testing dataset.
+```{r}
+validCol <- colnames(training)
+testing <- testing[validCol[1:length(validCol)-1]]
+```
+
+## Prediction Models
+
+In this section, we use the classification tree and generalized boosted model to do the prediction. 
+
+### Classification Tree
+Here we use 10-fold cross validation with 3 repetitions.
+
+```{r, cache=TRUE}
+set.seed(12355)
+trainCtrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+classmodel <- train(classe ~ ., method = "rpart", data = mytraining, trControl = trainCtrl)
+classmodel
+```
+Use the classification model to predict the validation dataset and get the accuracy.
+```{r, cache=TRUE}
+predictValidationRpart <- predict(classmodel, myvalidation)
+confusionMatrix(predictValidationRpart, myvalidation$classe)
+```
+We can observe that the accuracy is only 49.6%, which mean the out-of-sample error is 1-49.6%=50.4%. Next we will try out the Random Forest model.
+
+### Generalized Boosted Model
+```{r, cache=TRUE}
+set.seed(12355)
+trainCtrl <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+gbmmodel <- train(classe ~ ., method = "gbm", data = mytraining, trControl = trainCtrl)
+gbmmodel
+```
+
+Use the model to predict the validation dataset.
+```{r, cache=TRUE}
+predictValidationGbm <- predict(gbmmodel, myvalidation)
+confusionMatrix(predictValidationGbm, myvalidation$classe)
+```
+The accuray is observed to be 96.4%, which means the out-of-sample error is 1-96.4%=3.6%.
+
+## Predict on the test dataset
+Since the GBM model provides much better accuracy, we use the GBM model to make prediction on the testing dataset.
+```{r}
+predictTest <- predict(gbmmodel, testing)
+predictTest
+```
